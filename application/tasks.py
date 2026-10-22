@@ -1709,6 +1709,15 @@ def _schedule_post_registration_recheck(
     task_id = str(getattr(logger, "task_id", "") or "").strip()
     if not normalized_ids or not task_id or bool(logger.is_cancel_requested()):
         return None
+    if os.getenv("POST_REGISTER_RECHECK_ENABLED", "1").strip().lower() in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }:
+        # Hammering a fresh session with repeated OAuth/verification requests
+        # gets accounts deactivated within minutes; operators can opt out.
+        return None
     try:
         delay = float(
             os.getenv(

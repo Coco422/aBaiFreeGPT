@@ -255,9 +255,9 @@ def test_access_token_check_treats_403_as_invalid(monkeypatch):
 
     assert result == {
         "state": "invalid",
-        "message": "access token 返回 HTTP 403（api.openai.com/v1/me）",
+        "message": "access token 返回 HTTP 403（chatgpt.com/backend-api/me）",
     }
-    assert calls == ["https://api.openai.com/v1/me"]
+    assert calls == ["https://chatgpt.com/backend-api/me"]
 
 
 def test_access_token_check_treats_cloudflare_403_as_inconclusive(monkeypatch):
@@ -287,11 +287,7 @@ def test_access_token_check_treats_cloudflare_403_as_inconclusive(monkeypatch):
 
     assert result["state"] == "unknown"
     assert "Cloudflare/地区上游拦截" in result["message"]
-    assert calls == [
-        "https://api.openai.com/v1/me",
-        "https://api.openai.com/v1/me",
-        "https://api.openai.com/v1/me",
-    ]
+    assert calls[0] == "https://chatgpt.com/backend-api/me"
 
 
 def test_access_token_check_uses_protocol_chrome_fingerprint(monkeypatch):
@@ -316,8 +312,8 @@ def test_access_token_check_uses_protocol_chrome_fingerprint(monkeypatch):
     )
 
     assert result["state"] == "valid"
+    # The web endpoint is the authoritative liveness probe for ChatGPT tokens.
     assert [item[0] for item in calls] == [
-        "https://api.openai.com/v1/me",
         "https://chatgpt.com/backend-api/me",
     ]
     assert all(
@@ -325,10 +321,6 @@ def test_access_token_check_uses_protocol_chrome_fingerprint(monkeypatch):
         for _, kwargs in calls
     )
     assert calls[0][1]["proxies"] == {
-        "http": "http://mihomo:7890",
-        "https": "http://mihomo:7890",
-    }
-    assert calls[1][1]["proxies"] == {
         "http": "http://mihomo:7890",
         "https": "http://mihomo:7890",
     }
@@ -363,11 +355,9 @@ def test_access_token_check_keeps_api_alive_when_workspace_check_is_blocked(monk
     result = credential_checks.check_chatgpt_access_token("fresh-access")
 
     assert result["state"] == "valid"
-    assert "工作区检查未确认" in result["message"]
-    assert calls == [
-        "https://api.openai.com/v1/me",
-        "https://chatgpt.com/backend-api/me",
-    ]
+    assert "api.openai.com" in result["message"]
+    assert calls[0] == "https://chatgpt.com/backend-api/me"
+    assert "https://api.openai.com/v1/me" in calls
 
 
 def test_access_token_check_rejects_deactivated_workspace(monkeypatch):
@@ -468,9 +458,9 @@ def test_access_token_check_stops_immediately_on_401(monkeypatch):
 
     assert result == {
         "state": "invalid",
-        "message": "access token 返回 HTTP 401（api.openai.com/v1/me）",
+        "message": "access token 返回 HTTP 401（chatgpt.com/backend-api/me）",
     }
-    assert calls == ["https://api.openai.com/v1/me"]
+    assert calls == ["https://chatgpt.com/backend-api/me"]
 
 
 def test_refresh_check_recovers_invalid_access_token_with_protocol_login(monkeypatch):

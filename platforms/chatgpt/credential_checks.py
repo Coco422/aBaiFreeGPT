@@ -1302,6 +1302,26 @@ def check_chatgpt_access_token(
                     "transient": True,
                     "http_status": status_code,
                 }
+            body_text = ""
+            try:
+                body_text = str(getattr(response, "text", "") or "")
+            except Exception:
+                body_text = ""
+            lowered_body = body_text.lower()
+            if (
+                "identity edge" in lowered_body
+                or "does not accept this credential" in lowered_body
+                or "insufficient scopes" in lowered_body
+                or "missing scopes" in lowered_body
+            ):
+                # A ChatGPT web token hitting the platform API is expected to be
+                # rejected; that says nothing about the account's liveness.
+                return {
+                    "state": "unknown",
+                    "message": f"端点不适用该凭据 HTTP 403（{endpoint_name}）",
+                    "transient": False,
+                    "http_status": status_code,
+                }
             return {
                 "state": "invalid",
                 "message": f"access token 返回 HTTP 403（{endpoint_name}{detail_suffix}）",
@@ -1418,40 +1438,47 @@ def check_chatgpt_access_token(
 
         return last_result
 
+    # ChatGPT web tokens are accepted by chatgpt.com/backend-api/me and rejected
+    # by api.openai.com/v1/me with 403 "Identity Edge route authentication
+    # policy does not accept this credential".  The web endpoint is therefore
+    # the authoritative liveness probe; the API endpoint can only add signal and
+    # must never turn a live web session into a false "invalid".
     primary = probe(
-        "api.openai.com/v1/me",
-        "https://api.openai.com/v1/me",
+        "chatgpt.com/backend-api/me",
+        "https://chatgpt.com/backend-api/me",
         # Route the AT check through the account's proxy when one is supplied so
         # the operator's own IP is never used with a fresh registration token.
         proxies=workspace_proxies,
-        max_retries=2,
+        max_retries=1,
     )
-    if primary.get("state") != "valid":
+    primary_state = str(primary.get("state") or "unknown")
+    if primary_state == "valid":
         return {
-            "state": str(primary.get("state") or "unknown"),
-            "message": str(primary.get("message") or "AT 验活未确认"),
+            "state": "valid",
+            "message": "access token 可用（chatgpt.com/backend-api/me）",
+        }
+    if primary_state == "invalid":
+        return {
+            "state": "invalid",
+            "message": str(primary.get("message") or "access token 已失效"),
         }
 
-    workspace = probe(
-        "chatgpt.com/backend-api/me",
-        "https://chatgpt.com/backend-api/me",
+    api_probe = probe(
+        "api.openai.com/v1/me",
+        "https://api.openai.com/v1/me",
         proxies=workspace_proxies,
         max_retries=0,
     )
-    if workspace.get("state") == "invalid":
-        return {
-            "state": "invalid",
-            "message": str(workspace.get("message") or "工作区不可用"),
-        }
-    if workspace.get("state") == "valid":
+    if api_probe.get("state") == "valid":
         return {
             "state": "valid",
-            "message": "access token 可用（api.openai.com/v1/me；工作区正常）",
+            "message": "access token 可用（api.openai.com/v1/me）",
         }
     return {
-        "state": "valid",
+        "state": "unknown",
         "message": (
-            "access token 可用（api.openai.com/v1/me）；"
-            f"工作区检查未确认：{str(workspace.get('message') or '无响应')}"
+            "AT 验活未确认："
+            f"{str(primary.get('message') or 'web 端点无响应')}；"
+            f"{str(api_probe.get('message') or 'API 端点无响应')}"
         ),
     }

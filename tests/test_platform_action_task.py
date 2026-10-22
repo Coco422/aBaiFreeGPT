@@ -286,14 +286,20 @@ def test_register_task_does_not_save_an_account_without_access_token(monkeypatch
     assert logger.result_data["fail"] == 1
 
 
-def test_register_task_does_not_save_an_account_whose_access_token_returns_401(monkeypatch):
+def test_register_task_saves_an_account_whose_access_token_returns_401(monkeypatch):
+    saved = []
+
     class FakePlatform:
         def register(self, email=None, password=None):
             return Account(
                 platform="chatgpt",
-                email=email or "dead@example.com",
+                email=email or "no-rt@example.com",
                 password=password or "Secret123!",
-                extra={"access_token": "dead-access-token"},
+                extra={
+                    "access_token": "no-rt-access-token",
+                    "_registration_password_confirmed": True,
+                    "totp_secret": "JBSWY3DPEHPK3PXP",
+                },
             )
 
     monkeypatch.setattr(tasks_module, "get", lambda platform_name: object)
@@ -315,27 +321,30 @@ def test_register_task_does_not_save_an_account_whose_access_token_returns_401(m
         },
     )
     monkeypatch.setattr("core.base_mailbox.create_mailbox", lambda *args, **kwargs: object())
-    monkeypatch.setattr(
-        tasks_module,
-        "save_account",
-        lambda account: (_ for _ in ()).throw(AssertionError("must not save a confirmed 401")),
-    )
+
+    def fake_save(account):
+        saved.append(account)
+        account.id = 7
+        return account
+
+    monkeypatch.setattr(tasks_module, "save_account", fake_save)
 
     logger = _FakeLogger()
     tasks_module._execute_register_task(
         {
             "count": 1,
             "concurrency": 1,
-            "email": "dead@example.com",
+            "email": "no-rt@example.com",
             "extra": {"identity_provider": "mailbox"},
         },
         logger,
     )
 
-    assert logger.finished[0] == tasks_module.TASK_STATUS_FAILED
-    assert logger.result_data["success"] == 0
-    assert logger.result_data["fail"] == 1
-    assert any("401 验活失败" in str(event) for event in logger.events)
+    # An account without a refresh token (OpenAI add_phone gate) can still be
+    # used for web login, so it is kept even though the AT check failed.
+    assert [account.email for account in saved] == ["no-rt@example.com"]
+    assert logger.result_data["success"] == 1
+    assert any("账号仍入库" in str(event) for event in logger.events)
 
 
 def test_register_task_does_not_save_without_remote_password_confirmation(monkeypatch):

@@ -1421,7 +1421,9 @@ def check_chatgpt_access_token(
     primary = probe(
         "api.openai.com/v1/me",
         "https://api.openai.com/v1/me",
-        proxies=None,
+        # Route the AT check through the account's proxy when one is supplied so
+        # the operator's own IP is never used with a fresh registration token.
+        proxies=workspace_proxies,
         max_retries=2,
     )
     if primary.get("state") != "valid":

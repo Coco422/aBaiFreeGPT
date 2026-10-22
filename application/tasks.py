@@ -1423,8 +1423,16 @@ def _execute_register_task(payload: dict[str, Any], logger: TaskLogger) -> None:
             access_token_state = str(access_token_check.get("state") or "unknown")
             access_token_message = str(access_token_check.get("message") or "")
             if access_token_state == "invalid":
-                raise RuntimeError(f"注册账号 401 验活失败：{access_token_message or 'access token 已失效'}")
-            if access_token_state == "valid":
+                # A freshly registered account that never received a refresh
+                # token (OpenAI add_phone gate) reports an invalid AT.  Keep
+                # the account so it can still be used for web login instead of
+                # discarding a successfully created mailbox + password + TOTP.
+                logger.log(
+                    f"{account.email} 的 access token 验活未通过，账号仍入库："
+                    f"{access_token_message or 'access token 已失效'}",
+                    level="warning",
+                )
+            elif access_token_state == "valid":
                 logger.log(f"{account.email} 的 access token 401 验活正常")
             else:
                 logger.log(

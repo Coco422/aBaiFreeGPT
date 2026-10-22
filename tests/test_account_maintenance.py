@@ -324,7 +324,10 @@ def test_access_token_check_uses_protocol_chrome_fingerprint(monkeypatch):
         kwargs["impersonate"] == PROTOCOL_CHROME_IMPERSONATE
         for _, kwargs in calls
     )
-    assert calls[0][1]["proxies"] is None
+    assert calls[0][1]["proxies"] == {
+        "http": "http://mihomo:7890",
+        "https": "http://mihomo:7890",
+    }
     assert calls[1][1]["proxies"] == {
         "http": "http://mihomo:7890",
         "https": "http://mihomo:7890",

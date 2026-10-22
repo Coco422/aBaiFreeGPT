@@ -35,12 +35,14 @@ PROTOCOL_CHROME_IMPERSONATE = f"chrome{PROTOCOL_CHROME_VERSION}"
 # ---------------------------------------------------------------------------
 
 def _browser_family(ua: str) -> str:
-    """Return ``chrome``, ``firefox``, or ``unknown`` for a User-Agent."""
+    """Return ``chrome``, ``firefox``, ``safari`` or ``unknown`` for a User-Agent."""
     lowered = ua.lower()
     if "chrome" in lowered and "firefox" not in lowered:
         return "chrome"
     if "firefox" in lowered:
         return "firefox"
+    if "safari" in lowered and "chrome" not in lowered:
+        return "safari"
     return "unknown"
 
 
@@ -125,7 +127,7 @@ class ProtocolEnvironmentProfile:
         "chrome145", "chrome146",
         "firefox102", "firefox110", "firefox117", "firefox128",
         "firefox133", "firefox135", "firefox144",
-        "safari15_5", "safari17_0", "safari18_0",
+        "safari15_5", "safari17_0", "safari18_0", "safari18_4", "safari184",
         "edge99", "edge101",
     }
 
@@ -311,6 +313,34 @@ class ProtocolEnvironmentProfile:
         )
 
     @classmethod
+    def desktop_us_en_safari_v1(cls) -> ProtocolEnvironmentProfile:
+        """macOS desktop, Safari 18.4, English (US), 1920×1080, 8 cores.
+
+        ``auth.openai.com`` currently challenges the Chrome and Firefox
+        impersonation targets with a Cloudflare managed challenge while the
+        ``safari184`` fingerprint is served normally, so the protocol flow
+        prefers Safari first.
+        """
+        return cls(
+            name="desktop-us-en-safari-v1",
+            impersonate="safari184",
+            user_agent=(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+                "Version/18.4 Safari/605.1.15"
+            ),
+            accept_language="en-US,en;q=0.9",
+            language="en-US",
+            languages=("en-US", "en"),
+            timezone="America/New_York",
+            screen_width=1920,
+            screen_height=1080,
+            hardware_concurrency=8,
+            sdk_url="https://sentinel.openai.com/sentinel/20260219f9f6/sdk.js",
+            no_cookie=False,
+        )
+
+    @classmethod
     def desktop_us_en_firefox_v1(cls) -> ProtocolEnvironmentProfile:
         """Windows 10 desktop, Firefox 144, English (US), 1920×1080, 8 cores.
 
@@ -341,11 +371,12 @@ class ProtocolEnvironmentProfile:
     def all_us_en_desktop_variants(cls) -> list[ProtocolEnvironmentProfile]:
         """Return every US-English desktop profile for fingerprint rotation.
 
-        Firefox variants come first: curl_cffi's Chrome impersonation is flagged
-        by Cloudflare on ChatGPT's edge (HTTP 403 challenge) while the Firefox
-        TLS/HTTP2 fingerprint passes, so the pool prefers Firefox.
+        Safari comes first because ``auth.openai.com`` serves the ``safari184``
+        fingerprint while challenging Chrome/Firefox impersonation with a
+        Cloudflare managed challenge.
         """
         return [
+            cls.desktop_us_en_safari_v1(),
             cls.desktop_us_en_firefox_v1(),
             cls.desktop_us_en_chrome_v1(),
             cls.desktop_us_en_chrome_v2(),

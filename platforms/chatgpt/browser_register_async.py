@@ -1005,6 +1005,39 @@ async def _browser_registration_flow(
     raise RuntimeError("注册状态机超出最大步数")
 
 
+_PROXY_EXIT_IP_CACHE: dict[str, str] = {}
+
+
+def _resolve_proxy_exit_ip(proxy: str) -> str:
+    """Return the proxy's exit IPv4 without relying on ip-api.com.
+
+    Camoufox's built-in GeoIP lookup calls ``ip-api.com`` directly, which a lot
+    of proxy exits cannot reach.  Caching one ipify lookup per proxy avoids a
+    second network dependency during context creation.
+    """
+    key = str(proxy or "").strip()
+    if not key:
+        return ""
+    cached = _PROXY_EXIT_IP_CACHE.get(key)
+    if cached:
+        return cached
+    try:
+        from curl_cffi import requests as _curl_requests
+
+        response = _curl_requests.get(
+            "https://api.ipify.org",
+            proxies={"http": key, "https": key},
+            timeout=12,
+        )
+        candidate = (response.text or "").strip()
+    except Exception:
+        return ""
+    if not re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", candidate):
+        return ""
+    _PROXY_EXIT_IP_CACHE[key] = candidate
+    return candidate
+
+
 async def register_in_context(browser, *, email: str, password: str, proxy: str | None,
                               otp_callback: Callable[[], str], log,
                               startup_gate: asyncio.Semaphore | None = None,
@@ -1014,10 +1047,16 @@ async def register_in_context(browser, *, email: str, password: str, proxy: str 
     """在共享浏览器进程里开一个独立指纹 context，跑完注册并关闭 context。"""
     health = health_state if health_state is not None else {}
     try:
+        # Camoufox resolves the proxy's exit IP through ip-api.com when a proxy
+        # is set; that extra hop is often blocked by the proxy itself (502) and
+        # aborts the whole registration.  Resolve it once per proxy ourselves
+        # and pass ``webrtc_ip`` so the lookup is skipped.
+        exit_ip = await asyncio.to_thread(_resolve_proxy_exit_ip, proxy) if proxy else ""
         context = await AsyncNewContext(
             browser,
             os=random.choice(_CONTEXT_OS_CHOICES),
             proxy=_build_proxy_config(proxy),
+            webrtc_ip=exit_ip or None,
             # A smaller desktop viewport lowers paint/compositing cost by roughly
             # 28% while keeping the current registration form in desktop layout.
             viewport={"width": 1024, "height": 720},

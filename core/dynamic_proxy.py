@@ -59,7 +59,7 @@ class DynamicProxyManager:
         if not candidates:
             return None
         raw = candidates[0]
-        if raw.startswith(("http://", "https://", "socks5://", "socks4://")):
+        if raw.startswith(("http://", "https://", "socks5://", "socks5h://", "socks4://", "socks4a://")):
             proxy = raw
         else:
             proxy = f"http://{raw}"

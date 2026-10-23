@@ -351,7 +351,7 @@ class LocalMicrosoftMailboxPool(BaseMailbox):
         # A parent mailbox that is only used once must be registered with its
         # own address: OpenAI treats ``parent+tag@`` as the same account and
         # answers ``user_already_exists`` for every later alias.
-        if int(record.max_uses or 1) <= 1:
+        if self.alias_count <= 1 or int(record.max_uses or 1) <= 1:
             email = entry.email
         else:
             email = self._candidate_email(entry)

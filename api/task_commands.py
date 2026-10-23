@@ -28,9 +28,10 @@ class RegisterTaskRequest(BaseModel):
     # Use the full Mihomo pool without pinning the first worker to a named node.
     proxy_pool: bool = False
     # For the Microsoft mailbox pool: split each parent mailbox into six one-time
-    # child addresses (+reg1..+reg6).  When false, register directly with the
-    # parent mailbox address itself (each mailbox used once).
-    split_register: bool = True
+    # child addresses (+reg1..+reg6).  OpenAI normalizes ``+tag`` back to the
+    # parent mailbox, so the second attempt always hits user_already_exists.
+    # Splitting is therefore off by default; one mailbox yields one account.
+    split_register: bool = False
     # Rotating-residential-proxy extract API: each worker fetches a fresh IP
     # from this URL and swaps to a new one on Cloudflare challenges.
     proxy_api_url: Optional[str] = None
@@ -128,6 +129,8 @@ def create_register_task(body: RegisterTaskRequest):
         # child addresses (+reg1..+reg6).  When off, register with the parent
         # address itself so every mailbox is used exactly once.
         extra["local_ms_pool_alias_count"] = 6 if bool(body.split_register) else 1
+        # Kept for API compatibility; the mailbox pool itself no longer tags
+        # addresses when a parent is meant to be used exactly once.
         extra["local_ms_pool_allow_reuse"] = "false"
     else:
         extra.pop("local_ms_pool_alias_count", None)

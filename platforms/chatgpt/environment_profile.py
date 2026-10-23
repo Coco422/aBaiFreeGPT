@@ -373,8 +373,13 @@ class ProtocolEnvironmentProfile:
 
         Safari comes first because ``auth.openai.com`` serves the ``safari184``
         fingerprint while challenging Chrome/Firefox impersonation with a
-        Cloudflare managed challenge.
+        Cloudflare managed challenge.  ``CHATGPT_FINGERPRINT_MODE=rotate``
+        restores the old rotating pool.
         """
+        import os as _os
+
+        if _os.getenv("CHATGPT_FINGERPRINT_MODE", "safari").strip().lower() != "rotate":
+            return [cls.desktop_us_en_safari_v1()]
         return [
             cls.desktop_us_en_safari_v1(),
             cls.desktop_us_en_firefox_v1(),

@@ -40,8 +40,16 @@ def test_microsoft_registration_forces_six_one_time_children(client, monkeypatch
     )
 
     assert response.status_code == 200
-    assert captured["extra"]["local_ms_pool_alias_count"] == 6
+    # Splitting is off by default: OpenAI normalizes +tag to the parent mailbox.
+    assert captured["extra"]["local_ms_pool_alias_count"] == 1
     assert captured["extra"]["local_ms_pool_allow_reuse"] == "false"
+
+    split_response = client.post(
+        "/api/tasks/register",
+        json={"count": 1, "split_register": True, "extra": {"mail_provider": "local_ms_pool"}},
+    )
+    assert split_response.status_code == 200
+    assert captured["extra"]["local_ms_pool_alias_count"] == 6
 
 
 def test_registration_requires_an_explicit_mailbox_selection(client, monkeypatch):

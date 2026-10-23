@@ -1709,7 +1709,7 @@ def _schedule_post_registration_recheck(
     task_id = str(getattr(logger, "task_id", "") or "").strip()
     if not normalized_ids or not task_id or bool(logger.is_cancel_requested()):
         return None
-    if os.getenv("POST_REGISTER_RECHECK_ENABLED", "1").strip().lower() in {
+    if os.getenv("POST_REGISTER_RECHECK_ENABLED", "0").strip().lower() in {
         "0",
         "false",
         "no",

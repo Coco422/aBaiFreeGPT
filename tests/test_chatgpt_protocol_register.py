@@ -543,18 +543,9 @@ def test_protocol_register_profile_request_uses_only_supported_fields(monkeypatc
 def test_protocol_profiles_use_current_supported_chrome_fingerprint():
     profiles = FingerprintPool.from_us_en_desktop().profiles
 
-    assert len(profiles) == 8
-    # auth.openai.com serves the Safari fingerprint while challenging Chrome and
-    # Firefox impersonation, so Safari leads the rotation.
+    # Default: only Safari, because auth.openai.com challenges Chrome/Firefox.
+    assert len(profiles) == 1
     assert profiles[0].impersonate == "safari184"
-    assert {profile.impersonate for profile in profiles[1:]} == {
-        "firefox144",
-        PROTOCOL_CHROME_IMPERSONATE,
-    }
-    assert all(
-        f"Chrome/{PROTOCOL_CHROME_VERSION}.0.0.0" in profile.user_agent
-        for profile in profiles[2:]
-    )
 
 
 def test_protocol_register_default_session_uses_current_chrome_fingerprint(monkeypatch):

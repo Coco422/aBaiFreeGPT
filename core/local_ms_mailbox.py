@@ -348,7 +348,13 @@ class LocalMicrosoftMailboxPool(BaseMailbox):
         if self.allow_reuse:
             alias_index = 1
         alias_index = min(max(alias_index, 1), int(record.max_uses or self.alias_count))
-        email = self._candidate_email(entry)
+        # A parent mailbox that is only used once must be registered with its
+        # own address: OpenAI treats ``parent+tag@`` as the same account and
+        # answers ``user_already_exists`` for every later alias.
+        if int(record.max_uses or 1) <= 1:
+            email = entry.email
+        else:
+            email = self._candidate_email(entry)
         key = entry.key if int(record.max_uses or 1) <= 1 else f"{entry.key}#sub-{alias_index}"
         return LocalMicrosoftMailboxCandidate(
             entry=entry,

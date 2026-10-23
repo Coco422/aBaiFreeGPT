@@ -615,6 +615,25 @@ def _authorization_code_via_account_selection(
     if next_url:
         next_url = urljoin(OPENAI_AUTH, next_url)
     if _requires_phone_verification(selected_payload, next_url):
+        try:
+            import json as _json, os as _os, time as _time
+            _path = _os.path.join(_os.getenv("ADD_PHONE_DUMP_DIR", "/tmp"), f"addphone_oauth_{int(_time.time())}.json")
+            _page = ""
+            try:
+                _resp = session.get(next_url, headers={"referer": OPENAI_AUTH}, proxies=proxies, timeout=30)
+                _page = str(getattr(_resp, "text", "") or "")
+            except Exception:
+                _page = ""
+            with open(_path, "w", encoding="utf-8") as _fh:
+                _json.dump({
+                    "next_url": next_url,
+                    "selected_payload": selected_payload,
+                    "cookies": dict(session.cookies.get_dict()),
+                    "add_phone_html_len": len(_page),
+                    "add_phone_html": _page[:200000],
+                }, _fh, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
         raise RuntimeError(
             "Codex OAuth 要求手机号验证，本次 RT 获取失败（未执行短信接码）"
         )

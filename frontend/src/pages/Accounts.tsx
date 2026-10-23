@@ -85,7 +85,7 @@ function RegisterDialog({ onClose, onCreated }: { onClose: () => void, onCreated
   const [proxyApiUrl, setProxyApiUrl] = useState('')
   const [mailProvider, setMailProvider] = useState('')
   const [mailProviders, setMailProviders] = useState<Array<any>>([])
-  const [splitRegister, setSplitRegister] = useState(true)
+  const [splitRegister, setSplitRegister] = useState(false)
   const [harAvailable, setHarAvailable] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -250,7 +250,7 @@ function RegisterDialog({ onClose, onCreated }: { onClose: () => void, onCreated
                 <span className="text-xs text-[var(--text-muted)]">每个微软邮箱最多可注册 {splitRegister ? 6 : 1} 次。</span>
                 <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
                   <input type="checkbox" checked={splitRegister} onChange={event => setSplitRegister(event.target.checked)} className="accent-sky-500" />
-                  分裂注册（每个父邮箱拆分 6 个子地址 +reg1~+reg6 注册）
+                  分裂注册（+tag 子地址；OpenAI 会视作同一账号，默认关闭）
                 </label>
               </div>
             )}

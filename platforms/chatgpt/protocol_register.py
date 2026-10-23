@@ -1790,6 +1790,19 @@ class ChatGPTProtocolRegister:
             normalized_page = str(page_type or "").strip().lower()
             normalized_url = str(continue_url or "").strip().lower()
             if normalized_page == "add_phone" or normalized_url.endswith("/add-phone"):
+                try:
+                    import json as _json, os as _os, time as _time
+                    _dir = _os.getenv("ADD_PHONE_DUMP_DIR", "/tmp")
+                    _path = _os.path.join(_dir, f"addphone_{int(_time.time())}.json")
+                    with open(_path, "w", encoding="utf-8") as _fh:
+                        _json.dump(
+                            {"page_type": page_type, "continue_url": continue_url,
+                             "validator_payload": validation, "authorization": authorization},
+                            _fh, ensure_ascii=False, indent=2,
+                        )
+                    self.log(f"add_phone 载荷已保存: {_path}")
+                except Exception as _exc:
+                    self.log(f"add_phone 载荷保存失败: {_exc}", level="warning")
                 # ``add_phone`` is also used as a UI hint in sessions where
                 # the account-creation API still permits completion.  Let the
                 # server-side create_account call make the authoritative

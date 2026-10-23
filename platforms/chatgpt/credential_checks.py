@@ -790,6 +790,7 @@ def mint_chatgpt_refresh_token_from_session(
     cancel_check: Callable[[], bool] | None = None,
     authorization_attempts: int = 3,
     retry_delay_seconds: float = 2.0,
+    phone_retry_attempted: bool = False,
 ) -> dict[str, Any]:
     """Use saved web-session cookies to mint a new Codex OAuth RT.
 
@@ -846,6 +847,29 @@ def mint_chatgpt_refresh_token_from_session(
                     # without a callback.  Retry with a fresh state/PKCE pair; do
                     # not retry explicit bans or a token exchange that may have
                     # already consumed an authorization code.
+                    if "要求手机号验证" in str(exc):
+                        if not phone_retry_attempted:
+                            try:
+                                from services import phone_verification
+
+                                if phone_verification.enabled():
+                                    phone_result = phone_verification.complete(session, proxy=proxy)
+                                    if phone_result.get("ok"):
+                                        return mint_chatgpt_refresh_token_from_session(
+                                            cookies,
+                                            client_id=resolved_client_id,
+                                            proxy=proxy,
+                                            session=session,
+                                            email=email,
+                                            device_id=device_id,
+                                            sentinel_client=sentinel_client,
+                                            prefer_account_selection=False,
+                                            cancel_check=cancel_check,
+                                            phone_retry_attempted=True,
+                                        )
+                            except Exception:
+                                pass
+                        raise
                     if "会话未自动授权" not in str(exc):
                         raise
                     if attempt + 1 >= attempts:

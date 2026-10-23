@@ -187,7 +187,7 @@ class ChatGPTPlatform(BasePlatform):
             # Each concurrent worker draws a distinct, internally-consistent
             # device fingerprint from the shared pool.  This avoids every
             # worker presenting the same screen/cpu/UA combination.
-            profile = next(_fingerprint_pool)
+            profile = _fingerprint_pool.next_for_proxy(ctx.proxy)
             ctx.log(f"分配设备指纹: {profile.name}")
 
             return ChatGPTProtocolRegister(

@@ -378,7 +378,10 @@ class ProtocolEnvironmentProfile:
         """
         import os as _os
 
-        if _os.getenv("CHATGPT_FINGERPRINT_MODE", "safari").strip().lower() != "rotate":
+        mode = _os.getenv("CHATGPT_FINGERPRINT_MODE", "random").strip().lower()
+        if mode == "random":
+            return [random_safari_profile()]
+        if mode != "rotate":
             return [cls.desktop_us_en_safari_v1()]
         return [
             cls.desktop_us_en_safari_v1(),
@@ -406,6 +409,88 @@ class ProtocolEnvironmentProfile:
 # ---------------------------------------------------------------------------
 
 
+SAFARI_TARGETS = (
+    ("safari18_4", "18.4"),
+    ("safari18_0", "18.0"),
+    ("safari17_0", "17.0"),
+    ("safari15_5", "15.5"),
+)
+_SAFARI_MACOS = ("10_15_7", "13_6", "14_5", "14_6")
+_SAFARI_SCREENS = ((1440, 900), (1512, 982), (1680, 1050), (1920, 1080), (2560, 1440))
+_COUNTRY_TIMEZONES = {
+    "PL": ("Europe/Warsaw",),
+    "GB": ("Europe/London",),
+    "DE": ("Europe/Berlin",),
+    "FR": ("Europe/Paris",),
+    "NL": ("Europe/Amsterdam",),
+    "US": ("America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles"),
+    "CA": ("America/Toronto", "America/Vancouver"),
+    "JP": ("Asia/Tokyo",),
+    "TW": ("Asia/Taipei",),
+    "SG": ("Asia/Singapore",),
+    "KR": ("Asia/Seoul",),
+}
+_PROXY_TZ_CACHE: dict[str, str] = {}
+
+
+def timezone_for_proxy(proxy: str | None) -> str:
+    """Best-effort timezone for the proxy's exit IP (cached per proxy)."""
+    key = str(proxy or "").strip()
+    if not key:
+        return ""
+    cached = _PROXY_TZ_CACHE.get(key)
+    if cached:
+        return cached
+    try:
+        import json
+        import random
+        import requests
+
+        proxies = {"http": key, "https": key}
+        raw = requests.get("https://ipinfo.io/json", proxies=proxies, timeout=8).text
+        country = str((json.loads(raw) or {}).get("country") or "").upper()
+        zones = _COUNTRY_TIMEZONES.get(country) or ("America/New_York",)
+        zone = random.choice(zones)
+    except Exception:
+        return ""
+    _PROXY_TZ_CACHE[key] = zone
+    return zone
+
+
+def random_safari_profile(*, timezone: str = "") -> "ProtocolEnvironmentProfile":
+    """Random but internally consistent Safari profile.
+
+    Cloudflare on auth.openai.com currently serves Safari TLS fingerprints and
+    challenges Chrome/Firefox, so the variation stays inside the Safari family
+    while screen, CPU count, macOS version and timezone are randomized.
+    """
+    import random
+
+    target, version = random.choice(SAFARI_TARGETS)
+    macos = random.choice(_SAFARI_MACOS)
+    width, height = random.choice(_SAFARI_SCREENS)
+    profile = ProtocolEnvironmentProfile(
+        name=f"desktop-random-safari-{version}-{width}x{height}",
+        impersonate=target,
+        user_agent=(
+            f"Mozilla/5.0 (Macintosh; Intel Mac OS X {macos}) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+            f"Version/{version} Safari/605.1.15"
+        ),
+        accept_language="en-US,en;q=0.9",
+        language="en-US",
+        languages=("en-US", "en"),
+        timezone=timezone or random.choice(("America/New_York", "Europe/Warsaw", "Europe/London")),
+        screen_width=width,
+        screen_height=height,
+        hardware_concurrency=random.choice((4, 6, 8, 10, 12)),
+        sdk_url="https://sentinel.openai.com/sentinel/20260219f9f6/sdk.js",
+        no_cookie=False,
+    )
+    profile.validate()
+    return profile
+
+
 @dataclass
 class FingerprintPool:
     """Round-robin iterator over curated, internally-consistent profiles.
@@ -423,9 +508,23 @@ class FingerprintPool:
         return self
 
     def __next__(self) -> ProtocolEnvironmentProfile:
+        import os as _os
+
+        if _os.getenv("CHATGPT_FINGERPRINT_MODE", "random").strip().lower() == "random":
+            self._index += 1
+            return random_safari_profile()
         profile = self.profiles[self._index % len(self.profiles)]
         self._index += 1
         return profile
+
+    def next_for_proxy(self, proxy: str | None = None) -> ProtocolEnvironmentProfile:
+        """Random Safari profile whose timezone follows the proxy exit."""
+        import os as _os
+
+        if _os.getenv("CHATGPT_FINGERPRINT_MODE", "random").strip().lower() == "random":
+            self._index += 1
+            return random_safari_profile(timezone=timezone_for_proxy(proxy))
+        return self.__next__()
 
     @classmethod
     def from_us_en_desktop(cls) -> FingerprintPool:

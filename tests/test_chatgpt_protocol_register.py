@@ -543,9 +543,9 @@ def test_protocol_register_profile_request_uses_only_supported_fields(monkeypatc
 def test_protocol_profiles_use_current_supported_chrome_fingerprint():
     profiles = FingerprintPool.from_us_en_desktop().profiles
 
-    # Default: only Safari, because auth.openai.com challenges Chrome/Firefox.
+    # Default: a single randomized Safari fingerprint per worker.
     assert len(profiles) == 1
-    assert profiles[0].impersonate == "safari184"
+    assert profiles[0].impersonate.startswith("safari")
 
 
 def test_protocol_register_default_session_uses_current_chrome_fingerprint(monkeypatch):

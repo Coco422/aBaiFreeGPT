@@ -36,10 +36,10 @@ PHONE_HEADERS = {
         "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Safari/605.1.15"
     ),
 }
+# 实测（参考 gpt-free-register）：真正生效的是 phone-otp/validate
 VERIFY_ENDPOINTS = (
+    "/api/accounts/phone-otp/validate",
     "/api/accounts/add-phone/verify",
-    "/api/accounts/add-phone/confirm",
-    "/api/accounts/add-phone/validate",
 )
 
 
@@ -136,11 +136,13 @@ def send_code(session: requests.Session, phone: str, *, proxy: str | None = None
 
 def submit_code(session: requests.Session, code: str, *, proxy: str | None = None) -> dict[str, Any]:
     last: dict[str, Any] = {}
+    headers = dict(PHONE_HEADERS)
+    headers["referer"] = f"{AUTH_BASE}/phone-verification"
     for endpoint in VERIFY_ENDPOINTS:
         response = session.post(
             AUTH_BASE + endpoint,
             json={"code": code},
-            headers=PHONE_HEADERS,
+            headers=headers,
             proxies=_proxies(proxy),
             timeout=30,
         )
@@ -152,24 +154,74 @@ def submit_code(session: requests.Session, code: str, *, proxy: str | None = Non
     return last
 
 
+def _provider() -> str:
+    """smsactivate（Grizzly/SMSBower/HeroSMS 通用协议）或 5sim。"""
+    explicit = os.getenv("SMS_PROVIDER", "").strip().lower()
+    if explicit:
+        return explicit
+    return "smsactivate" if os.getenv("SMS_API_KEY", "").strip() else "5sim"
+
+
+def _sms_activate_order():
+    from services.sms_activations import SmsActivateClient
+
+    client = SmsActivateClient()
+    activation = client.acquire()
+    return client, activation.activation_id, f"+{activation.phone.lstrip('+')}"
+
+
 def complete(session: requests.Session, *, proxy: str | None = None,
              country: str = "", operator: str = "", timeout: int = 180,
              log=print) -> dict[str, Any]:
     """Full add_phone flow for an existing auth.openai.com session."""
-    order = buy_number(country=country, operator=operator)
-    phone = str(order.get("phone") or "")
-    log(f"[phone] 5sim 号码 {phone}（{order.get('operator')} / ${order.get('price')}）")
-    sent = send_code(session, phone, proxy=proxy)
-    log(f"[phone] send -> HTTP {sent['status']} {str(sent['payload'])[:160]}")
-    if sent["status"] != 200:
-        if "phone_number_in_use" in sent["text"] or "suspicious" in sent["text"]:
-            cancel(order.get("id"))
-        return {"ok": False, "stage": "send", **sent, "phone": phone}
-    code = wait_code(order.get("id"), timeout=timeout)
-    log(f"[phone] 短信验证码: {code or '(超时)'}")
-    if not code:
-        cancel(order.get("id"))
-        return {"ok": False, "stage": "sms_timeout", "phone": phone}
-    verified = submit_code(session, code, proxy=proxy)
-    log(f"[phone] verify {verified.get('endpoint')} -> HTTP {verified.get('status')} {str(verified.get('text'))[:160]}")
-    return {"ok": verified.get("status") == 200, "stage": "verify", "phone": phone, **verified}
+    attempts = max(int(os.getenv("SMS_MAX_RETRIES", "3") or 3), 1)
+    provider = _provider()
+    last: dict[str, Any] = {"ok": False, "stage": "init"}
+    for attempt in range(1, attempts + 1):
+        client = None
+        order_id: Any = ""
+        phone = ""
+        if provider == "5sim":
+            order = buy_number(country=country, operator=operator)
+            order_id = order.get("id")
+            phone = str(order.get("phone") or "")
+            log(f"[phone] 第 {attempt}/{attempts} 次 5sim 号码 {phone} (${order.get('price')})")
+        else:
+            client, order_id, phone = _sms_activate_order()
+            log(f"[phone] 第 {attempt}/{attempts} 次 sms-activate 号码 {phone} (id={order_id})")
+
+        sent = send_code(session, phone, proxy=proxy)
+        log(f"[phone] send -> HTTP {sent['status']} {str(sent['payload'])[:160]}")
+        if sent["status"] != 200:
+            if client is not None:
+                client.cancel(order_id)
+            elif "phone_number_in_use" in sent["text"] or "suspicious" in sent["text"]:
+                cancel(order_id)
+            last = {"ok": False, "stage": "send", **sent, "phone": phone}
+            if "rate_limit_exceeded" in sent["text"]:
+                return last
+            continue
+
+        if client is not None:
+            code = client.wait_code(order_id, timeout=timeout)
+        else:
+            code = wait_code(order_id, timeout=timeout)
+        log(f"[phone] 验证码: {code or '(超时)'}")
+        if not code:
+            if client is not None:
+                client.cancel(order_id)
+            else:
+                cancel(order_id)
+            last = {"ok": False, "stage": "sms_timeout", "phone": phone}
+            continue
+
+        verified = submit_code(session, code, proxy=proxy)
+        log(f"[phone] verify {verified.get('endpoint')} -> HTTP {verified.get('status')} {str(verified.get('text'))[:160]}")
+        if verified.get("status") == 200:
+            if client is not None:
+                client.complete(order_id)
+            return {"ok": True, "stage": "verify", "phone": phone, **verified}
+        if client is not None:
+            client.cancel(order_id)
+        last = {"ok": False, "stage": "verify", "phone": phone, **verified}
+    return last
